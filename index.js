@@ -12,8 +12,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const ADMIN_ID = String(process.env.ADMIN_TELEGRAM_ID || '');
 const WEBHOOK_URL = String(process.env.WEBHOOK_URL || '').replace(/\/$/, '');
 const PORT = Number(process.env.PORT || 3000);
-const MANAGER_USERNAME = process.env.MANAGER_USERNAME || 'your_manager_username';
-const STORE_NAME = process.env.STORE_NAME || 'Consultant Bot';
+const MANAGER_USERNAME = process.env.MANAGER_USERNAME || 'savdo_consultant_bot';
+const STORE_NAME = process.env.STORE_NAME || 'Savdo Consultant Bot';
 const TIME_ZONE = process.env.TIME_ZONE || 'Asia/Tashkent';
 const DAILY_BROADCAST_HOUR = Number(process.env.DAILY_BROADCAST_HOUR || 12);
 const DAILY_BROADCAST_MINUTE = Number(process.env.DAILY_BROADCAST_MINUTE || 0);
@@ -79,12 +79,20 @@ function ensureDataFiles() {
             {
               q: 'Есть ли доставка?',
               a: 'Да, доставка обсуждается с менеджером. Нажмите кнопку связи.'
+            },
+            {
+              q: 'Как заказать?',
+              a: 'Выберите товар в каталоге и нажмите кнопку связи с продавцом.'
             }
           ],
           uz: [
             {
               q: 'Dostavka bormi?',
               a: 'Ha, yetkazib berish bo‘yicha menejer bilan bog‘laning.'
+            },
+            {
+              q: 'Qanday buyurtma beraman?',
+              a: 'Katalogdan mahsulot tanlang va sotuvchi bilan bog‘lanish tugmasini bosing.'
             }
           ]
         },
@@ -138,6 +146,15 @@ function defaultSession() {
 
 bot.use(session({ initial: defaultSession }));
 
+bot.use(async (ctx, next) => {
+  console.log('UPDATE RECEIVED');
+  await next();
+});
+
+bot.catch((err) => {
+  console.error('BOT ERROR:', err);
+});
+
 function mainMenu(lang = 'ru') {
   if (lang === 'uz') {
     return new Keyboard()
@@ -171,11 +188,7 @@ function categoriesKeyboard(lang = 'ru') {
     keyboard.text(category).row();
   }
 
-  if (lang === 'uz') {
-    keyboard.text('⬅️ Orqaga');
-  } else {
-    keyboard.text('⬅️ Назад');
-  }
+  keyboard.text(lang === 'uz' ? '⬅️ Orqaga' : '⬅️ Назад');
 
   return keyboard.resized();
 }
@@ -200,12 +213,6 @@ function registerUser(ctx) {
       createdAt: new Date().toISOString()
     });
     saveDb(db);
-  } else {
-    existing.username = ctx.from?.username || existing.username;
-    existing.firstName = ctx.from?.first_name || existing.firstName;
-    existing.lastName = ctx.from?.last_name || existing.lastName;
-    existing.lang = ctx.session.lang || existing.lang || 'ru';
-    saveDb(db);
   }
 }
 
@@ -214,8 +221,10 @@ function productCaption(product) {
 }
 
 function productKeyboard() {
-  return new InlineKeyboard()
-    .url('☎️ Связаться', `https://t.me/${MANAGER_USERNAME.replace('@', '')}`);
+  return new InlineKeyboard().url(
+    '☎️ Связаться',
+    `https://t.me/${MANAGER_USERNAME.replace('@', '')}`
+  );
 }
 
 async function sendProductCard(ctx, product) {
@@ -245,20 +254,6 @@ function getNewestProducts(limit = 10) {
     .slice(0, limit);
 }
 
-function getPromoText(lang) {
-  if (lang === 'uz') {
-    return '🎁 Aksiya va maxsus takliflar uchun menejer bilan bog‘laning.';
-  }
-  return '🎁 Актуальные акции и спецпредложения уточняйте у менеджера.';
-}
-
-function getAboutText(lang) {
-  if (lang === 'uz') {
-    return `${STORE_NAME} — o‘smirlar kiyimlari do‘koni. Katalogni ko‘ring va buyurtma uchun menejer bilan bog‘laning.`;
-  }
-  return `${STORE_NAME} — магазин подростковой одежды. Смотрите каталог и связывайтесь с менеджером для заказа.`;
-}
-
 function findKnowledgeAnswer(text, lang) {
   const knowledge = loadKnowledge();
   const list = knowledge[lang] || [];
@@ -279,20 +274,21 @@ function findKnowledgeAnswer(text, lang) {
 async function askOpenAI(question, lang) {
   if (!openai) return null;
 
-  const systemPrompt =
-    lang === 'uz'
-      ? `Siz ${STORE_NAME} do‘koni uchun foydali va qisqa savdo-maslahatchisiz. Faqat kiyim, buyurtma, yetkazib berish, o‘lcham, narx, aloqa kabi mavzularda javob bering. Agar aniq ma'lumot bo‘lmasa, menejer bilan bog‘lanishni tavsiya qiling. Javoblar qisqa bo‘lsin.`
-      : `Ты полезный и краткий консультант магазина ${STORE_NAME}. Отвечай только по темам одежды, заказа, доставки, размеров, цен и связи. Если точной информации нет, рекомендуй связаться с менеджером. Ответы должны быть короткими.`;
-
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: systemPrompt },
+        {
+          role: 'system',
+          content:
+            lang === 'uz'
+              ? `Siz ${STORE_NAME} uchun qisqa va foydali maslahatchisiz.`
+              : `Ты краткий и полезный консультант магазина ${STORE_NAME}.`
+        },
         { role: 'user', content: question }
       ],
       temperature: 0.5,
-      max_tokens: 250
+      max_tokens: 200
     });
 
     return response.choices?.[0]?.message?.content?.trim() || null;
@@ -316,6 +312,7 @@ async function showMainMenu(ctx) {
 }
 
 bot.command('start', async (ctx) => {
+  console.log('/start command works');
   registerUser(ctx);
   await showMainMenu(ctx);
 });
@@ -346,13 +343,11 @@ bot.hears(['🌐 Язык', '🌐 Til'], async (ctx) => {
 
 bot.hears('🇷🇺 Русский', async (ctx) => {
   ctx.session.lang = 'ru';
-  registerUser(ctx);
   await showMainMenu(ctx);
 });
 
 bot.hears('🇺🇿 O‘zbekcha', async (ctx) => {
   ctx.session.lang = 'uz';
-  registerUser(ctx);
   await showMainMenu(ctx);
 });
 
@@ -383,14 +378,6 @@ for (const category of CATEGORIES) {
       );
     }
 
-    await ctx.reply(
-      langText(
-        ctx,
-        `Товары в категории: ${category}`,
-        `${category} kategoriyasidagi mahsulotlar`
-      )
-    );
-
     for (const product of products) {
       await sendProductCard(ctx, product);
     }
@@ -410,185 +397,43 @@ bot.hears(['🔥 Новинки', '🔥 Yangi mahsulotlar'], async (ctx) => {
     );
   }
 
-  await ctx.reply(
-    langText(ctx, '🔥 Новинки:', '🔥 Yangi mahsulotlar:')
-  );
-
   for (const product of products) {
     await sendProductCard(ctx, product);
   }
 });
 
 bot.hears(['🎁 Акции', '🎁 Aksiyalar'], async (ctx) => {
-  await ctx.reply(getPromoText(ctx.session.lang));
-});
-
-bot.hears(['☎️ Связь', '☎️ Aloqa'], async (ctx) => {
   await ctx.reply(
     langText(
       ctx,
-      `Связь с менеджером: https://t.me/${MANAGER_USERNAME.replace('@', '')}`,
-      `Menejer bilan aloqa: https://t.me/${MANAGER_USERNAME.replace('@', '')}`
+      '🎁 Актуальные акции уточняйте у менеджера.',
+      '🎁 Aksiyalarni menejerdan aniqlashtiring.'
     )
   );
 });
 
-bot.hears(['ℹ️ О нас', 'ℹ️ Biz haqimizda'], async (ctx) => {
-  await ctx.reply(getAboutText(ctx.session.lang));
-});
-
-bot.hears('➕ Добавить товар', async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply('У вас нет доступа.');
-
-  ctx.session.state = 'add_product_photo';
-  ctx.session.tempProduct = {
-    photo: '',
-    category: '',
-    name: '',
-    description: '',
-    price: ''
-  };
-
-  await ctx.reply('Отправьте фото товара.');
-});
-
-bot.hears('📦 Список товаров', async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply('У вас нет доступа.');
-
-  const db = loadDb();
-
-  if (!db.products.length) {
-    return ctx.reply('Товаров пока нет.');
-  }
-
-  for (const product of db.products) {
-    await ctx.reply(
-      `ID: ${product.id}\nКатегория: ${product.category}\nНазвание: ${product.name}\nЦена: ${Number(product.price).toLocaleString('ru-RU')} сум`
-    );
-  }
-});
-
-bot.hears('📣 Рассылка', async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply('У вас нет доступа.');
-
-  ctx.session.state = 'broadcast_text';
-  await ctx.reply('Отправьте текст для рассылки всем пользователям.');
-});
-
-bot.hears('📊 Статистика', async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.reply('У вас нет доступа.');
-
-  const db = loadDb();
-
+bot.hears(['☎️ Связь', '☎️ Aloqa'], async (ctx) => {
   await ctx.reply(
-    `Пользователей: ${db.users.length}\nТоваров: ${db.products.length}`
+    `https://t.me/${MANAGER_USERNAME.replace('@', '')}`
   );
 });
 
-bot.on('message:photo', async (ctx) => {
-  if (!isAdmin(ctx)) return;
-
-  if (ctx.session.state !== 'add_product_photo') return;
-
-  const photos = ctx.message.photo;
-  const largest = photos[photos.length - 1];
-  ctx.session.tempProduct.photo = largest.file_id;
-  ctx.session.state = 'add_product_category';
-
-  await ctx.reply('Теперь отправьте категорию товара из списка ниже:', {
-    reply_markup: categoriesKeyboard('ru')
-  });
+bot.hears(['ℹ️ О нас', 'ℹ️ Biz haqimizda'], async (ctx) => {
+  await ctx.reply(
+    langText(
+      ctx,
+      `${STORE_NAME} — магазин подростковой одежды.`,
+      `${STORE_NAME} — o‘smirlar kiyimlari do‘koni.`
+    )
+  );
 });
 
 bot.on('message:text', async (ctx, next) => {
   registerUser(ctx);
 
-  if (isAdmin(ctx)) {
-    if (ctx.session.state === 'add_product_category') {
-      const category = ctx.message.text;
-
-      if (!CATEGORIES.includes(category)) {
-        return ctx.reply('Пожалуйста, выберите категорию кнопкой.');
-      }
-
-      ctx.session.tempProduct.category = category;
-      ctx.session.state = 'add_product_name';
-      return ctx.reply('Введите название товара:');
-    }
-
-    if (ctx.session.state === 'add_product_name') {
-      ctx.session.tempProduct.name = ctx.message.text;
-      ctx.session.state = 'add_product_description';
-      return ctx.reply('Введите описание товара:');
-    }
-
-    if (ctx.session.state === 'add_product_description') {
-      ctx.session.tempProduct.description = ctx.message.text;
-      ctx.session.state = 'add_product_price';
-      return ctx.reply('Введите цену в сумах, только число:');
-    }
-
-    if (ctx.session.state === 'add_product_price') {
-      const price = ctx.message.text.replace(/[^\d]/g, '');
-
-      if (!price) {
-        return ctx.reply('Цена должна быть числом. Попробуйте ещё раз.');
-      }
-
-      ctx.session.tempProduct.price = price;
-
-      const db = loadDb();
-      const newProduct = {
-        id: Date.now(),
-        photo: ctx.session.tempProduct.photo,
-        category: ctx.session.tempProduct.category,
-        name: ctx.session.tempProduct.name,
-        description: ctx.session.tempProduct.description,
-        price: Number(ctx.session.tempProduct.price),
-        createdAt: new Date().toISOString()
-      };
-
-      db.products.push(newProduct);
-      saveDb(db);
-
-      ctx.session.state = null;
-      ctx.session.tempProduct = defaultSession().tempProduct;
-
-      await ctx.reply('Товар успешно добавлен.', {
-        reply_markup: adminMenu()
-      });
-
-      return sendProductCard(ctx, newProduct);
-    }
-
-    if (ctx.session.state === 'broadcast_text') {
-      const db = loadDb();
-      const text = ctx.message.text;
-      let sent = 0;
-      let failed = 0;
-
-      await ctx.reply(`Начинаю рассылку по ${db.users.length} пользователям...`);
-
-      for (const user of db.users) {
-        try {
-          await bot.api.sendMessage(user.chatId, text);
-          sent++;
-        } catch (error) {
-          failed++;
-          console.error(`Broadcast error to ${user.chatId}:`, error.message);
-        }
-      }
-
-      ctx.session.state = null;
-      return ctx.reply(`Рассылка завершена.\nОтправлено: ${sent}\nОшибок: ${failed}`, {
-        reply_markup: adminMenu()
-      });
-    }
-  }
-
   const text = ctx.message.text;
-
   const knownAnswer = findKnowledgeAnswer(text, ctx.session.lang);
+
   if (knownAnswer) {
     return ctx.reply(knownAnswer);
   }
@@ -612,10 +457,6 @@ bot.on('message:text', async (ctx, next) => {
       '🇺🇿 O‘zbekcha',
       '⬅️ Назад',
       '⬅️ Orqaga',
-      '➕ Добавить товар',
-      '📦 Список товаров',
-      '📣 Рассылка',
-      '📊 Статистика',
       '🏠 Главное меню',
       ...CATEGORIES
     ].includes(text)
@@ -632,21 +473,29 @@ bot.on('message:text', async (ctx, next) => {
   return ctx.reply(
     langText(
       ctx,
-      'Я могу помочь по товарам, заказу, доставке и связи с менеджером.',
-      'Men mahsulotlar, buyurtma, yetkazib berish va menejer bilan aloqa bo‘yicha yordam bera olaman.'
+      'Я могу помочь по товарам и заказу.',
+      'Men mahsulotlar va buyurtma bo‘yicha yordam bera olaman.'
     )
   );
 });
 
 app.get('/', (req, res) => {
-  res.send('Consultant Bot is running');
+  res.send('Savdo Consultant Bot is running');
 });
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: STORE_NAME });
 });
 
-app.use('/webhook', webhookCallback(bot, 'express'));
+app.post('/webhook', async (req, res) => {
+  console.log('WEBHOOK HIT');
+  try {
+    await webhookCallback(bot, 'express')(req, res);
+  } catch (error) {
+    console.error('WEBHOOK ERROR:', error);
+    res.status(500).send('Webhook error');
+  }
+});
 
 async function setWebhookIfNeeded() {
   if (!WEBHOOK_URL) {
@@ -700,7 +549,6 @@ async function runDailyBroadcastCheck() {
   lastBroadcastKey = currentKey;
 
   const db = loadDb();
-  let sent = 0;
 
   for (const user of db.users) {
     try {
@@ -709,17 +557,13 @@ async function runDailyBroadcastCheck() {
           ? db.settings.dailyBroadcastTextUz
           : db.settings.dailyBroadcastTextRu;
 
-      await bot.api.sendMessage(user.chatId, text, {
-        reply_markup: mainMenu(user.lang || 'ru')
-      });
-
-      sent++;
+      await bot.api.sendMessage(user.chatId, text);
     } catch (error) {
       console.error(`Daily broadcast failed for ${user.chatId}:`, error.message);
     }
   }
 
-  console.log(`Daily broadcast sent: ${sent}`);
+  console.log('Daily broadcast sent');
 }
 
 setInterval(() => {
