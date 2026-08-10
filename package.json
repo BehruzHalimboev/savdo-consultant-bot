@@ -1,0 +1,20 @@
+{
+  "name": "consultant-bot",
+  "version": "1.0.0",
+  "description": "Telegram-бот для продажи подростковой одежды",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18.20.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "grammy": "^1.45.1",
+    "openai": "^4.89.0"
+  }
+}
