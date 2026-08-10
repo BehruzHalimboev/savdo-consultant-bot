@@ -1,0 +1,30 @@
+{
+  "ru": [
+    {
+      "q": "Есть ли доставка?",
+      "a": "Да, доставка обсуждается с менеджером. Нажмите кнопку связи."
+    },
+    {
+      "q": "Как заказать?",
+      "a": "Выберите товар в каталоге и нажмите кнопку связи с продавцом."
+    },
+    {
+      "q": "Где вы находитесь?",
+      "a": "Адрес магазина уточняйте у менеджера через кнопку связи."
+    }
+  ],
+  "uz": [
+    {
+      "q": "Dostavka bormi?",
+      "a": "Ha, yetkazib berish bo‘yicha menejer bilan bog‘laning."
+    },
+    {
+      "q": "Qanday buyurtma beraman?",
+      "a": "Katalogdan mahsulot tanlang va sotuvchi bilan bog‘lanish tugmasini bosing."
+    },
+    {
+      "q": "Manzilingiz qayerda?",
+      "a": "Do‘kon manzilini menejerdan bilib olishingiz mumkin."
+    }
+  ]
+}
